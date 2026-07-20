@@ -11,9 +11,9 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from dotenv import load_dotenv
 
-load_dotenv()/
+load_dotenv()
 
-model_name = "gpt-4o-mini"  # Ensure Up-to-date model initialization
+model_name = "Llama3.2"  # Ensure Up-to-date model initialization
 
 # List of documents to process
 documents = [
@@ -46,16 +46,22 @@ def scrape_docs(urls: List[str]) -> List[Dict]:
 
 def create_vector_store(texts: List[str], metadatas: List[Dict]):
     """Create vector store using ChromaDB"""
-    embeddings = OpenAIEmbeddings(
-        model="text-embedding-3-small"
-    )  # Ensure correct implementation
+    from langchain.embeddings import HuggingFaceEmbeddings
+
+    embeddings = HuggingFaceEmbeddings()
+   
     db = Chroma.from_texts(texts=texts, metadatas=metadatas, embedding=embeddings)
     return db
 
 
 def setup_qa_chain(db):
     """Set up QA chain with polite response template"""
-    llm = ChatOpenAI(model_name=model_name, temperature=0)
+    llm = ChatOllama(
+                model=model_name,
+                temperature=0,
+                format="json",
+                timeout=120,
+            )
     retriever = db.as_retriever()
 
     # Create a custom prompt template

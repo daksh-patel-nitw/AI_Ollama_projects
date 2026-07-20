@@ -9,7 +9,7 @@ import base64
 from dotenv import load_dotenv
 import chromadb
 from chromadb.utils.embedding_functions import OpenCLIPEmbeddingFunction
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from chromadb.utils.data_loaders import ImageLoader
@@ -80,7 +80,12 @@ def query_db(query, results=2):
 # === Run LangChain Vision Model (GPT-4 with image support) ===
 @st.cache_resource
 def get_vision_model():
-    return ChatOpenAI(model="gpt-4o", temperature=0.0)
+    return ChatOllama(
+                model="Llama3.2",
+                temperature=0,
+                format="json",
+                timeout=120,
+            )
 
 
 # Vision model and parser

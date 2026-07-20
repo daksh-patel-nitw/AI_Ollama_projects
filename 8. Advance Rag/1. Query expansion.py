@@ -30,7 +30,9 @@ class ChromaDBManager:
         os.makedirs(persist_directory, exist_ok=True)
 
         # Initialize embeddings
-        self.embedding_function = OpenAIEmbeddings()
+        from langchain.embeddings import HuggingFaceEmbeddings
+
+        self.embedding_function = HuggingFaceEmbeddings()
 
     def create_or_load_db(self, collection_name: str = "document_collection") -> Chroma:
         """Creates a new ChromaDB instance or loads existing one."""
@@ -137,7 +139,12 @@ class QueryExpander:
     """
 
     def __init__(self, temperature: float = 0):
-        self.llm = ChatOpenAI(temperature=temperature, model="gpt-4o-mini")
+        self.llm = ChatOllama(
+                model="Llama3.2",
+                temperature=0,
+                format="json",
+                timeout=120,
+            )
 
         self.query_expansion_prompt = PromptTemplate(
             input_variables=["question"],
@@ -563,4 +570,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-///

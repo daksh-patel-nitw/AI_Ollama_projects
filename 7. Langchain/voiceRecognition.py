@@ -7,7 +7,7 @@ from elevenlabs.client import ElevenLabs
 
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOllama
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -31,7 +31,8 @@ class DocumentProcessor:
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000, chunk_overlap=200, separators=["\n\n", "\n", ". ", " ", ""]
         )
-        self.embeddings = OpenAIEmbeddings()
+        from langchain.embeddings import HuggingFaceEmbeddings
+        self.embeddings = HuggingFaceEmbeddings()
 
     def load_documents(self, directory: str) -> List[Document]:
         """Load documents from different file types"""
@@ -125,7 +126,12 @@ class VoiceGenerator:
 class VoiceAssistantRAG:
     def __init__(self, elevenlabs_api_key):
         self.whisper_model = whisper.load_model("base")
-        self.llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0)
+        self.llm = ChatOllama(
+                model="Llama3.2",
+                temperature=0,
+                format="json",
+                timeout=120,
+            )
         self.embeddings = OpenAIEmbeddings()
         self.vector_store = None
         self.qa_chain = None
@@ -324,4 +330,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()/
+    main()

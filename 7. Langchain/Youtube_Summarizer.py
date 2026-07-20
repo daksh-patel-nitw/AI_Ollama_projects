@@ -34,14 +34,9 @@ load_dotenv()
 class EmbeddingModel:
     """Handles different embedding models"""
 
-    def __init__(self, model_type="openai"):
+    def __init__(self, model_type="nomic"):
         self.model_type = model_type
-        if model_type == "openai":
-            self.embedding_fn = OpenAIEmbeddings(
-                model="text-embedding-3-small",
-                openai_api_key=os.getenv("OPENAI_API_KEY"),
-            )
-        elif model_type == "chroma":
+        if model_type == "chroma":
             from langchain.embeddings import HuggingFaceEmbeddings
 
             self.embedding_fn = HuggingFaceEmbeddings()
@@ -61,20 +56,13 @@ class LLMModel:
     def __init__(self, model_type="openai", model_name="gpt-4"):
         self.model_type = model_type
         self.model_name = model_name
-
-        if model_type == "openai":
-            if not os.getenv("OPENAI_API_KEY"):
-                raise ValueError("OpenAI API key is required for OpenAI models")
-            self.llm = ChatOpenAI(model_name=model_name, temperature=0)
-        elif model_type == "ollama":
-            self.llm = ChatOllama(
+      
+        self.llm = ChatOllama(
                 model=model_name,
                 temperature=0,
                 format="json",
                 timeout=120,
             )
-        else:
-            raise ValueError(f"Unsupported LLM type: {model_type}")
 
 
 class YoutubeVideoSummarizer:
@@ -294,4 +282,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-///

@@ -12,7 +12,6 @@ from typing import TypedDict, Annotated
 import operator
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langgraph.graph import StateGraph, END
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
 # from langgraph.store.memory import InMemoryStore
@@ -34,8 +33,13 @@ openai_key = os.getenv("OPENAI_API_KEY")
 
 tavily = os.getenv("TAVILY_API_KEY")
 
-llm_name = "gpt-4o-mini"
-model = ChatOpenAI(api_key=openai_key, model=llm_name)
+llm_name = "Llama3.2"
+model = ChatOllama(
+                model="Llama3.2",
+                temperature=0,
+                format="json",
+                timeout=120,
+            )
 
 from tavily import TavilyClient
 
@@ -309,4 +313,3 @@ if __name__ == "__main__":
     main()
 
 # ==== End Streamlit UI ====
-///
