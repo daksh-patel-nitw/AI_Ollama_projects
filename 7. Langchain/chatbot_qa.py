@@ -1,8 +1,7 @@
 from typing import Dict, List
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings
+from langchain_text_splitter import RecursiveCharacterTextSplitter 
 from langchain_community.vectorstores import Chroma
-from langchain_openai import ChatOpenAI
+from langchain import ChatOllama
 from langchain_community.document_loaders import SeleniumURLLoader
 
 from langchain_core.output_parsers import StrOutputParser
