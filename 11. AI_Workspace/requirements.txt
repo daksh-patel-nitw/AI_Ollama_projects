@@ -1,0 +1,31 @@
+# Core app
+streamlit>=1.35
+python-dotenv
+
+# LLM providers
+langchain-core
+langchain-community
+langchain-ollama
+langchain-openai
+langchain-google-genai
+langgraph
+langgraph-prebuilt
+
+# PDF Q&A
+chromadb
+fastembed
+pypdf
+langchain-text-splitters
+
+# Web search (free, no API key)
+ddgs
+
+# Voice (free, fully local)
+faster-whisper
+piper-tts
+
+# Flower / image search — CPU-only torch keeps this install small;
+# on Linux/macOS run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch
+open-clip-torch
+pillow

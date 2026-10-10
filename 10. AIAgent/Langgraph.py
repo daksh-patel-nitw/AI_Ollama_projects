@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from langchain import ChatOllama
+from langchain_ollama import ChatOllama
 from typing import Optional
 
 
@@ -10,7 +10,7 @@ import json
 from langgraph.graph import StateGraph, END
 from typing import TypedDict, Annotated
 import operator
-from langchain_community.tools.tavily_search import TavilySearchResults
+from ddgs import DDGS
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import SystemMessage, HumanMessage
 
@@ -31,19 +31,25 @@ load_dotenv()
 
 openai_key = os.getenv("OPENAI_API_KEY")
 
-tavily = os.getenv("TAVILY_API_KEY")
-
-llm_name = "Llama3.2"
+llm_name = "llama3.2"
 model = ChatOllama(
-                model="Llama3.2",
+                model="llama3.2",
                 temperature=0,
                 format="json",
                 timeout=120,
             )
 
-from tavily import TavilyClient
 
-tavily = TavilyClient(api_key=tavily)
+def web_search(query: str, max_results: int = 2) -> list[str]:
+    """Free, key-less web search via DuckDuckGo (replaces the old Tavily call).
+
+    NOTE: verify ddgs.text()'s exact return shape against the installed
+    `ddgs` version — the API surface changed during the duckduckgo_search -> ddgs
+    rename, so pin a version and smoke-test this once before relying on it.
+    """
+    with DDGS() as ddgs:
+        results = list(ddgs.text(query, max_results=max_results))
+    return [r.get("body", "") for r in results if r.get("body")]
 
 
 from typing import TypedDict, List
@@ -121,9 +127,7 @@ def research_competitors_node(state: AgentState):
             ]
         )
         for q in queries.queries:
-            response = tavily.search(query=q, max_results=2)
-            for r in response["results"]:
-                content.append(r["content"])
+            content.extend(web_search(q, max_results=2))
     return {"content": content}
 
 
@@ -152,9 +156,7 @@ def research_critique_node(state: AgentState):
     )
     content = state["content"] or []
     for q in queries.queries:
-        response = tavily.search(query=q, max_results=2)
-        for r in response["results"]:
-            content.append(r["content"])
+        content.extend(web_search(q, max_results=2))
     return {"content": content}
 
 

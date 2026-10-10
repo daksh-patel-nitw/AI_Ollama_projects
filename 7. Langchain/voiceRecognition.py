@@ -2,12 +2,15 @@ import streamlit as st
 import whisper
 import sounddevice as sd
 import soundfile as sf
-from elevenlabs.client import ElevenLabs
+import wave
+import urllib.request
+from pathlib import Path
+from piper import PiperVoice, SynthesisConfig
 
 
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain_openai import ChatOllama
+from langchain_ollama import ChatOllama
 from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -84,50 +87,56 @@ class DocumentProcessor:
 
         return vector_store
     
+VOICE_DIR = Path(__file__).parent / "voices"
+VOICE_NAME = "en_US-lessac-medium"
+VOICE_BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium"
+
+
+def _ensure_voice_files() -> tuple[str, str]:
+    """Download the free Piper voice model on first run (cached after that)."""
+    VOICE_DIR.mkdir(parents=True, exist_ok=True)
+    onnx_path = VOICE_DIR / f"{VOICE_NAME}.onnx"
+    json_path = VOICE_DIR / f"{VOICE_NAME}.onnx.json"
+    for path in (onnx_path, json_path):
+        if not path.exists():
+            urllib.request.urlretrieve(f"{VOICE_BASE_URL}/{path.name}", path)
+    return str(onnx_path), str(json_path)
+
+
 class VoiceGenerator:
-    def __init__(self, api_key):
-        self.client = ElevenLabs(api_key=api_key)
-        # Default available voices
-        self.available_voices = [
-            "Rachel",
-            "Domi",
-            "Bella",
-            "Antoni",
-            "Elli",
-            "Josh",
-            "Arnold",
-            "Adam",
-            "Sam",
-        ]
-        self.default_voice = "Rachel"
+    """Free, fully local text-to-speech using Piper — no API key, no cloud call,
+    replaces the old paid ElevenLabs integration."""
+
+    def __init__(self):
+        onnx_path, json_path = _ensure_voice_files()
+        self.voice = PiperVoice.load(onnx_path, config_path=json_path)
+        self.available_voices = [VOICE_NAME]
+        self.default_voice = VOICE_NAME
 
     def generate_voice_response(self, text: str, voice_name: str = None) -> str:
-        """Generate voice response"""
+        """Generate voice response and return a path to a temp WAV file"""
         try:
-            selected_voice = voice_name or self.default_voice
-
-            # Generate audio using the client
-            audio_generator = self.client.generate(
-                text=text, voice=selected_voice, model="eleven_multilingual_v2"
-            )
-
-            # Convert generator to bytes
-            audio_bytes = b"".join(audio_generator)
-
-            # Save to temporary file
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_audio:
-                temp_audio.write(audio_bytes)
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
+                with wave.open(temp_audio.name, "wb") as wav_file:
+                    # NOTE: Piper's maintainer handoff (rhasspy -> OHF-Voice/piper1-gpl)
+                    # shifted this method's signature across versions — fall back to the
+                    # older call shape if synthesize_wav/SynthesisConfig aren't available.
+                    try:
+                        self.voice.synthesize_wav(
+                            text, wav_file, syn_config=SynthesisConfig()
+                        )
+                    except (AttributeError, TypeError):
+                        self.voice.synthesize(text, wav_file)
                 return temp_audio.name
-
         except Exception as e:
             print(f"Error generating voice response: {e}")
             return None
         
 class VoiceAssistantRAG:
-    def __init__(self, elevenlabs_api_key):
+    def __init__(self):
         self.whisper_model = whisper.load_model("base")
         self.llm = ChatOllama(
-                model="Llama3.2",
+                model="llama3.2",
                 temperature=0,
                 format="json",
                 timeout=120,
@@ -136,7 +145,7 @@ class VoiceAssistantRAG:
         self.vector_store = None
         self.qa_chain = None
         self.sample_rate = 44100
-        self.voice_generator = VoiceGenerator(elevenlabs_api_key)
+        self.voice_generator = VoiceGenerator()
 
     def setup_vector_store(self, vector_store):
         """Initialize the vector store and QA chain"""
@@ -227,14 +236,11 @@ def setup_knowledge_base():
 def main():
     st.set_page_config(page_title="Voice RAG Assistant", layout="wide")
 
-    # Check for API keys
-    elevenlabs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
+    # Check for API keys (only needed for OpenAIEmbeddings — voice is free/local now)
     openai_api_key = os.getenv("OPENAI_API_KEY")
 
-    if not all([elevenlabs_api_key, openai_api_key]):
-        st.error(
-            "Please set ELEVEN_LABS_API_KEY and OPENAI_API_KEY in your environment variables"
-        )
+    if not openai_api_key:
+        st.error("Please set OPENAI_API_KEY in your environment variables")
         return
 
     # Navigation
@@ -254,7 +260,7 @@ def main():
         st.title("Voice Assistant RAG System")
 
         # Initialize assistant
-        assistant = VoiceAssistantRAG(elevenlabs_api_key)
+        assistant = VoiceAssistantRAG()
         # Initialize the vector store and QA chain
         assistant.setup_vector_store(st.session_state.vector_store)
 

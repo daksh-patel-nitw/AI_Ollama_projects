@@ -1,0 +1,10 @@
+streamlit
+openai-whisper
+sounddevice
+soundfile
+piper-tts
+langchain
+langchain-openai
+langchain-ollama
+langchain-community
+python-dotenv
