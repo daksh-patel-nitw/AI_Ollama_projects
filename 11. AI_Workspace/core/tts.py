@@ -1,33 +1,55 @@
 import tempfile
+import threading
 import urllib.request
 import wave
 from pathlib import Path
 
 import streamlit as st
 
-from core.config import PIPER_VOICE_BASE_URL, PIPER_VOICE_NAME, VOICE_DIR
+from core.config import DEFAULT_PIPER_VOICE, PIPER_VOICE_BASE_URL, VOICE_DIR
+
+_prefetch_lock = threading.Lock()
+_prefetch_started: set[str] = set()
 
 
-def _ensure_voice_files() -> tuple[str, str]:
+def _voice_url_dir(voice_key: str) -> str:
+    lang_country, voice_name, quality = voice_key.split("-")
+    lang = lang_country.split("_")[0]
+    return f"{PIPER_VOICE_BASE_URL}/{lang}/{lang_country}/{voice_name}/{quality}"
+
+
+def _ensure_voice_files(voice_key: str = DEFAULT_PIPER_VOICE) -> tuple[str, str]:
     voice_dir = Path(VOICE_DIR)
     voice_dir.mkdir(parents=True, exist_ok=True)
-    onnx_path = voice_dir / f"{PIPER_VOICE_NAME}.onnx"
-    json_path = voice_dir / f"{PIPER_VOICE_NAME}.onnx.json"
+    onnx_path = voice_dir / f"{voice_key}.onnx"
+    json_path = voice_dir / f"{voice_key}.onnx.json"
+    base_url = _voice_url_dir(voice_key)
     for path in (onnx_path, json_path):
         if not path.exists():
-            urllib.request.urlretrieve(f"{PIPER_VOICE_BASE_URL}/{path.name}", path)
+            urllib.request.urlretrieve(f"{base_url}/{path.name}", path)
     return str(onnx_path), str(json_path)
 
 
-@st.cache_resource(show_spinner="Loading local Piper voice (first run downloads ~60MB)...")
-def _load_voice():
+def prefetch_voice_async(voice_key: str = DEFAULT_PIPER_VOICE) -> None:
+    """Download + load this voice in the background as soon as the Voice Assistant
+    page loads, so _load_voice() is already a warm cache hit (no spinner) by the
+    time the user actually sends a message."""
+    with _prefetch_lock:
+        if voice_key in _prefetch_started:
+            return
+        _prefetch_started.add(voice_key)
+    threading.Thread(target=_load_voice, args=(voice_key,), daemon=True).start()
+
+
+@st.cache_resource(show_spinner="Preparing voice...")
+def _load_voice(voice_key: str = DEFAULT_PIPER_VOICE):
     from piper import PiperVoice
 
-    onnx_path, json_path = _ensure_voice_files()
+    onnx_path, json_path = _ensure_voice_files(voice_key)
     return PiperVoice.load(onnx_path, config_path=json_path)
 
 
-def synthesize(text: str) -> str:
+def synthesize(text: str, voice_key: str = DEFAULT_PIPER_VOICE) -> str:
     """Free, fully local text-to-speech (Piper) -> path to a temp WAV file.
     No API key, no cloud call.
 
@@ -38,7 +60,7 @@ def synthesize(text: str) -> str:
     """
     from piper import SynthesisConfig
 
-    voice = _load_voice()
+    voice = _load_voice(voice_key)
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio:
         with wave.open(temp_audio.name, "wb") as wav_file:
             try:

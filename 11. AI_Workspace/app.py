@@ -3,8 +3,10 @@ import streamlit as st
 from core.config import (
     APP_NAME,
     DEFAULT_GEMINI_MODEL,
+    DEFAULT_OLLAMA_BASE_URL,
     DEFAULT_OLLAMA_MODEL,
     DEFAULT_OPENAI_MODEL,
+    GEMINI_MODELS,
     PROVIDERS,
     VERSION,
 )
@@ -20,7 +22,7 @@ st.subheader("1. Choose a model provider")
 provider = st.radio(
     "Model provider",
     PROVIDERS,
-    index=PROVIDERS.index(st.session_state.get("provider", "Ollama")),
+    index=PROVIDERS.index(st.session_state.get("provider", "Gemini")),
     horizontal=True,
 )
 st.session_state["provider"] = provider
@@ -30,12 +32,16 @@ if provider == "Ollama":
         "Ollama model name",
         value=st.session_state.get("ollama_model", DEFAULT_OLLAMA_MODEL),
     )
+    st.session_state["ollama_base_url"] = st.text_input(
+        "Ollama server URL",
+        value=st.session_state.get("ollama_base_url", DEFAULT_OLLAMA_BASE_URL),
+        help="Defaults to a locally running `ollama serve`. If you're tunneling Ollama "
+        "from elsewhere (e.g. a free Google Colab GPU session via ngrok/cloudflared), "
+        "paste that public URL here instead.",
+    )
     st.info(
-        "Free and fully local — requires Ollama running on **this machine** "
-        f"(`ollama serve`, with the model pulled via `ollama pull "
-        f"{st.session_state['ollama_model']}`). This will not work once the app "
-        "is deployed to a free cloud host unless you separately host and expose "
-        "an Ollama server — use OpenAI or Gemini below for a hosted deployment."
+        "Use tunneling Ollama from elsewhere (e.g. a free Google Colab GPU session via ngrok/cloudflared), "
+        "Paste that public URL and use.",
     )
 
 elif provider == "OpenAI":
@@ -55,9 +61,26 @@ elif provider == "Gemini":
         type="password",
         value=st.session_state.get("gemini_api_key", ""),
     )
-    st.session_state["gemini_model"] = st.text_input(
-        "Gemini model", value=st.session_state.get("gemini_model", DEFAULT_GEMINI_MODEL)
+
+    # Dropdown of known-good API model ids — a free-text field let users paste
+    # the AI Studio display name (e.g. "Gemini 2.5 Flash") which Google's API
+    # rejects with a 400 "unexpected model name format" error.
+    current_gemini_model = st.session_state.get("gemini_model", DEFAULT_GEMINI_MODEL)
+    gemini_options = GEMINI_MODELS + ["Custom…"]
+    default_index = (
+        gemini_options.index(current_gemini_model)
+        if current_gemini_model in GEMINI_MODELS
+        else len(GEMINI_MODELS)
     )
+    gemini_choice = st.selectbox("Gemini model", gemini_options, index=default_index)
+    if gemini_choice == "Custom…":
+        st.session_state["gemini_model"] = st.text_input(
+            "Custom Gemini model id (exact API id, e.g. gemini-2.5-flash)",
+            value=current_gemini_model if current_gemini_model not in GEMINI_MODELS else "",
+        )
+    else:
+        st.session_state["gemini_model"] = gemini_choice
+
     st.caption(
         "Google AI Studio offers a free tier for Gemini — create a key at "
         "aistudio.google.com/apikey. Kept only in this browser session's memory."

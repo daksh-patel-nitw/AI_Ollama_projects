@@ -3,13 +3,13 @@ streamlit>=1.35
 python-dotenv
 
 # LLM providers
+langchain
 langchain-core
 langchain-community
 langchain-ollama
 langchain-openai
 langchain-google-genai
 langgraph
-langgraph-prebuilt
 
 # PDF Q&A
 chromadb
@@ -29,3 +29,4 @@ piper-tts
 torch
 open-clip-torch
 pillow
+datasets

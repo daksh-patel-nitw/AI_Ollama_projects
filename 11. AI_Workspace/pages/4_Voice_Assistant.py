@@ -1,53 +1,113 @@
+import os
 import tempfile
 
 import streamlit as st
 
-from core.llm import get_llm
-from core.prompts import VOICE_PROMPT
+from core.chat_store import clear_history, save_message
+from core.config import DEFAULT_VOICE_LANGUAGE, VOICE_DB, VOICE_LANGUAGES
+from core.llm import describe_llm_error, extract_text, get_llm
+from core.prompts import VOICE_LANGUAGE_INSTRUCTIONS, VOICE_PROMPT
+from core.session import charge_session, get_session_id
 from core.stt import transcribe
-from core.tts import synthesize
+from core.tts import prefetch_voice_async, synthesize
 from utils.ui import page_header, require_provider
 
 st.set_page_config(page_title="Voice Assistant", page_icon="🎙️")
 require_provider()
 
+CHAT_DB_NAME = "voice_chat"
+session_id = get_session_id()
+
+
+def _clear_chat():
+    clear_history(VOICE_DB, CHAT_DB_NAME, session_id=session_id)
+    st.session_state.voice_history = []
+
+
+with st.sidebar:
+    language = st.selectbox(
+        "Language",
+        options=list(VOICE_LANGUAGES.keys()),
+        index=list(VOICE_LANGUAGES.keys()).index(
+            st.session_state.get("voice_language", DEFAULT_VOICE_LANGUAGE)
+        ),
+    )
+    st.session_state["voice_language"] = language
+
 page_header(
     "🎙️ Voice Assistant",
-    "Speak, get a transcript, a grounded reply, and a spoken answer back — "
-    "Whisper (STT) + Piper (TTS), both free and fully local, no API key.",
+    "Type or hit the mic in the chat box to record your question.\n"
+    "The spoken answer plays the moment it's ready alongside the reply",
+    on_clear=_clear_chat,
 )
+
+lang_config = VOICE_LANGUAGES[language]
+voice_key = lang_config["voice_key"]
+
+# Downloads the voice in the background the moment this page loads, instead of
+# blocking the first reply — no-ops instantly if it's already on disk.
+prefetch_voice_async(voice_key)
 
 if "voice_history" not in st.session_state:
     st.session_state.voice_history = []
 
-audio = st.audio_input("Record your question")
+for turn in st.session_state.voice_history:
+    with st.chat_message(turn["role"]):
+        st.markdown(turn["content"])
+        if turn["role"] == "assistant" and turn.get("extra") and os.path.exists(turn["extra"]):
+            st.audio(turn["extra"])
 
-if audio is not None:
-    with st.spinner("Transcribing..."):
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            tmp.write(audio.getvalue())
-            tmp_path = tmp.name
-        transcript = transcribe(tmp_path)
+submission = st.chat_input("Type your question, or tap the mic to record it...", accept_audio=True)
 
-    st.markdown(f"**You said:** {transcript}")
+user_text = None
+if submission:
+    if submission.audio is not None:
+        with st.spinner("Transcribing..."):
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp.write(submission.audio.getvalue())
+                tmp_path = tmp.name
+            try:
+                user_text = transcribe(tmp_path, language=lang_config["stt_code"])
+            except Exception as e:
+                st.error(f"Couldn't transcribe your recording: {e}")
+    elif submission.text:
+        user_text = submission.text
 
-    with st.spinner("Thinking..."):
-        messages = [{"role": "system", "content": VOICE_PROMPT}]
-        for role, text in st.session_state.voice_history[-6:]:
-            messages.append({"role": role, "content": text})
-        messages.append({"role": "user", "content": transcript})
-        answer = get_llm().invoke(messages).content
+if user_text and charge_session(len(user_text.encode())):
+    st.session_state.voice_history.append({"role": "user", "content": user_text})
+    save_message(VOICE_DB, CHAT_DB_NAME, "user", user_text, session_id=session_id)
+    with st.chat_message("user"):
+        st.markdown(user_text)
 
-    st.session_state.voice_history.append(("user", transcript))
-    st.session_state.voice_history.append(("assistant", answer))
+    with st.chat_message("assistant"):
+        system_prompt = VOICE_PROMPT + "\n" + VOICE_LANGUAGE_INSTRUCTIONS[language]
+        messages = [{"role": "system", "content": system_prompt}]
+        for turn in st.session_state.voice_history[-7:-1]:
+            messages.append({"role": turn["role"], "content": turn["content"]})
+        messages.append({"role": "user", "content": user_text})
 
-    st.markdown(f"**Assistant:** {answer}")
+        # Keep the reply hidden behind a loading bar until its spoken audio is
+        # ready, then reveal text + autoplaying audio together.
+        progress = st.progress(0, text="Thinking...")
+        wav_path = None
+        try:
+            answer = extract_text(get_llm().invoke(messages).content) or "(no answer)"
+            progress.progress(70, text="Synthesizing speech...")
+            wav_path = synthesize(answer, voice_key)
+            progress.empty()
+            st.markdown(answer)
+            st.audio(wav_path, autoplay=True)
+        except Exception as e:
+            progress.empty()
+            answer = describe_llm_error(e)
+            st.markdown(answer)
 
-    with st.spinner("Synthesizing speech..."):
-        wav_path = synthesize(answer)
-    st.audio(wav_path)
+    charge_session(len(answer.encode()))
+    st.session_state.voice_history.append(
+        {"role": "assistant", "content": answer, "extra": wav_path}
+    )
+    save_message(VOICE_DB, CHAT_DB_NAME, "assistant", answer, extra=wav_path, session_id=session_id)
 
-if st.session_state.voice_history:
-    with st.expander("Conversation history"):
-        for role, text in st.session_state.voice_history:
-            st.markdown(f"**{role.title()}:** {text}")
+
+
+
